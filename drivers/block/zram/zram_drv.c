@@ -74,14 +74,17 @@ static int zram_show_mem_notifier(struct notifier_block *nb,
 		if (init_done(zram)) {
 			u64 val;
 			u64 data_size;
+			u64 orig_data_size;
 
 			val = zs_get_total_size_bytes(meta->mem_pool);
-			data_size = atomic64_read(&zram->stats.compr_size);
+			data_size = atomic64_read(&zram->stats.compr_data_size);
+			orig_data_size = atomic64_read(
+						&zram->stats.pages_stored);
 			pr_info("Zram[%d] mem_used_total = %llu\n", i, val);
 			pr_info("Zram[%d] compr_data_size = %llu\n", i,
 				(unsigned long long)data_size);
-			pr_info("Zram[%d] orig_data_size = %u\n", i,
-				zram->stats.pages_stored);
+			pr_info("Zram[%d] orig_data_size = %llu\n", i,
+				(unsigned long long)orig_data_size);
 		}
 
 		up_read(&zram->init_lock);
@@ -156,7 +159,7 @@ static ssize_t zero_pages_show(struct device *dev,
 {
 	struct zram *zram = dev_to_zram(dev);
 
-	return sprintf(buf, "%u\n", atomic_read(&zram->stats.pages_zero));
+	return sprintf(buf, "%llu\n", (u64)atomic64_read(&zram->stats.zero_pages));
 }
 
 static ssize_t orig_data_size_show(struct device *dev,
@@ -165,7 +168,7 @@ static ssize_t orig_data_size_show(struct device *dev,
 	struct zram *zram = dev_to_zram(dev);
 
 	return sprintf(buf, "%llu\n",
-		(u64)(atomic_read(&zram->stats.pages_stored)) << PAGE_SHIFT);
+		(u64)(atomic64_read(&zram->stats.pages_stored)) << PAGE_SHIFT);
 }
 
 static ssize_t compr_data_size_show(struct device *dev,
@@ -174,7 +177,7 @@ static ssize_t compr_data_size_show(struct device *dev,
 	struct zram *zram = dev_to_zram(dev);
 
 	return sprintf(buf, "%llu\n",
-			(u64)atomic64_read(&zram->stats.compr_size));
+			(u64)atomic64_read(&zram->stats.compr_data_size));
 }
 
 static ssize_t mem_used_total_show(struct device *dev,
@@ -349,15 +352,15 @@ static void zram_free_page(struct zram *zram, size_t index)
 		 */
 		if (zram_test_flag(meta, index, ZRAM_ZERO)) {
 			zram_clear_flag(meta, index, ZRAM_ZERO);
-			atomic_dec(&zram->stats.pages_zero);
+			atomic64_dec(&zram->stats.zero_pages);
 		}
 		return;
 	}
 
 	zs_free(meta->mem_pool, handle);
 
-	atomic64_sub(meta->table[index].size, &zram->stats.compr_size);
-	atomic_dec(&zram->stats.pages_stored);
+	atomic64_sub(meta->table[index].size, &zram->stats.compr_data_size);
+	atomic64_dec(&zram->stats.pages_stored);
 
 	meta->table[index].handle = 0;
 	meta->table[index].size = 0;
@@ -501,7 +504,7 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 		zram_set_flag(meta, index, ZRAM_ZERO);
 		write_unlock(&zram->meta->tb_lock);
 
-		atomic_inc(&zram->stats.pages_zero);
+		atomic64_inc(&zram->stats.zero_pages);
 		ret = 0;
 		goto out;
 	}
@@ -559,8 +562,8 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 	write_unlock(&zram->meta->tb_lock);
 
 	/* Update stats */
-	atomic64_add(clen, &zram->stats.compr_size);
-	atomic_inc(&zram->stats.pages_stored);
+	atomic64_add(clen, &zram->stats.compr_data_size);
+	atomic64_inc(&zram->stats.pages_stored);
 out:
 	if (locked)
 		mutex_unlock(&meta->buffer_lock);
