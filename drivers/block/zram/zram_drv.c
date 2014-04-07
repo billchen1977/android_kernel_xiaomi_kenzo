@@ -760,7 +760,7 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 			if (zram_bvec_rw(zram, &bv, index + 1, 0, bio) < 0)
 				goto out;
 		} else
-			if (zram_bvec_rw(zram, &bvec, index, offset, bio) < 0)
+			if (zram_bvec_rw(zram, bvec, index, offset, bio) < 0)
 				goto out;
 
 		update_position(&index, &offset, bvec);
