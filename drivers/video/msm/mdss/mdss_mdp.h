@@ -105,6 +105,7 @@ enum mdss_mdp_block_power_state {
 enum mdss_mdp_mixer_type {
 	MDSS_MDP_MIXER_TYPE_UNUSED,
 	MDSS_MDP_MIXER_TYPE_INTF,
+	MDSS_MDP_MIXER_TYPE_INTF_NO_DSPP,
 	MDSS_MDP_MIXER_TYPE_WRITEBACK,
 };
 
@@ -1553,6 +1554,8 @@ void mdss_mdp_ctl_perf_release_bw(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_async_ctl_flush(struct msm_fb_data_type *mfd,
 		u32 flush_bits);
 int mdss_mdp_get_pipe_flush_bits(struct mdss_mdp_pipe *pipe);
+void mdss_mdp_get_interface_type(struct mdss_mdp_ctl *ctl, int *intf_type,
+		int *split_needed);
 struct mdss_mdp_mixer *mdss_mdp_block_mixer_alloc(void);
 int mdss_mdp_block_mixer_destroy(struct mdss_mdp_mixer *mixer);
 struct mdss_mdp_mixer *mdss_mdp_mixer_get(struct mdss_mdp_ctl *ctl, int mux);
