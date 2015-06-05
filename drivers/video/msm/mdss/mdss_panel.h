@@ -115,6 +115,11 @@ enum {
 	MODE_GPIO_LOW,
 };
 
+enum {
+	MODE_SEL_SPLIT = 0,
+	MODE_SEL_DSC_SINGLE,
+};
+
 /*
  * enum sim_panel_modes - Different panel modes for simulator panels
  *
@@ -646,6 +651,7 @@ struct mdss_panel_info {
 	int panel_max_fps;
 	int panel_max_vtotal;
 	u32 mode_gpio_state;
+	u32 mode_sel_state;
 	u32 min_fps;
 	u32 max_fps;
 	u32 prg_fet;
