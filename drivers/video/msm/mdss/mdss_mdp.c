@@ -740,9 +740,17 @@ static int mdss_mdp_intr2index(u32 intr_type, u32 intf_num)
 
 u32 mdss_mdp_get_irq_mask(u32 intr_type, u32 intf_num)
 {
-	int idx = mdss_mdp_intr2index(intr_type, intf_num);
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
-	return (idx < 0) ? 0 : mdp_irq_map[idx].irq_mask;
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		return MDSS_MDP_INTR_WB_2_DONE >> 2;
+	} else {
+		int idx = mdss_mdp_intr2index(intr_type, intf_num);
+		return (idx < 0) ? 0 : mdp_irq_map[idx].irq_mask;
+	}
 }
 
 void mdss_mdp_enable_hw_irq(struct mdss_data_type *mdata)
@@ -764,6 +772,7 @@ void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 	int irq_idx;
 	struct mdss_mdp_intr_reg reg;
 	struct mdss_mdp_irq irq;
+	u32 mask;
 
 	irq_idx = mdss_mdp_intr2index(intr_type, intf_num);
 	if (irq_idx < 0) {
@@ -774,9 +783,18 @@ void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 	irq = mdp_irq_map[irq_idx];
 	reg = mdp_intr_reg[irq.reg_idx];
 
-	pr_debug("clearing mdp irq mask=%x\n", irq.irq_mask);
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		mask = MDSS_MDP_INTR_WB_2_DONE >> 2;
+	} else {
+		mask = irq.irq_mask;
+	}
+
+	pr_debug("clearing mdp irq mask=%x\n", mask);
 	spin_lock_irqsave(&mdp_lock, irq_flags);
-	writel_relaxed(irq.irq_mask, mdata->mdp_base + reg.clr_off);
+	writel_relaxed(mask, mdata->mdp_base + reg.clr_off);
 	spin_unlock_irqrestore(&mdp_lock, irq_flags);
 }
 
@@ -788,6 +806,7 @@ int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_mdp_intr_reg reg;
 	struct mdss_mdp_irq irq;
+	u32 mask;
 
 	irq_idx = mdss_mdp_intr2index(intr_type, intf_num);
 	if (irq_idx < 0) {
@@ -798,16 +817,25 @@ int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num)
 	irq = mdp_irq_map[irq_idx];
 	reg = mdp_intr_reg[irq.reg_idx];
 
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		mask = MDSS_MDP_INTR_WB_2_DONE >> 2;
+	} else {
+		mask = irq.irq_mask;
+	}
+
 	spin_lock_irqsave(&mdp_lock, irq_flags);
-	if (mdata->mdp_irq_mask[irq.reg_idx] & irq.irq_mask) {
+	if (mdata->mdp_irq_mask[irq.reg_idx] & mask) {
 		pr_warn("MDSS MDP IRQ-0x%x is already set, mask=%x\n",
-				irq.irq_mask, mdata->mdp_irq_mask[idx]);
+				mask, mdata->mdp_irq_mask[idx]);
 		ret = -EBUSY;
 	} else {
 		pr_debug("MDP IRQ mask old=%x new=%x\n",
 				mdata->mdp_irq_mask[irq.reg_idx], irq.irq_mask);
-		mdata->mdp_irq_mask[irq.reg_idx] |= irq.irq_mask;
-		writel_relaxed(irq.irq_mask, mdata->mdp_base + reg.clr_off);
+		mdata->mdp_irq_mask[irq.reg_idx] |= mask;
+		writel_relaxed(mask, mdata->mdp_base + reg.clr_off);
 		writel_relaxed(mdata->mdp_irq_mask[irq.reg_idx],
 				mdata->mdp_base + reg.en_off);
 		mdata->mdss_util->enable_irq(&mdss_mdp_hw);
@@ -846,6 +874,7 @@ void mdss_mdp_irq_disable(u32 intr_type, u32 intf_num)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_mdp_intr_reg reg;
 	struct mdss_mdp_irq irq;
+	u32 mask;
 
 	irq_idx = mdss_mdp_intr2index(intr_type, intf_num);
 	if (irq_idx < 0) {
@@ -856,12 +885,21 @@ void mdss_mdp_irq_disable(u32 intr_type, u32 intf_num)
 	irq =  mdp_irq_map[irq_idx];
 	reg = mdp_intr_reg[irq.reg_idx];
 
-	spin_lock_irqsave(&mdp_lock, irq_flags);
-	if (!(mdata->mdp_irq_mask[irq.reg_idx] & irq.irq_mask)) {
-		pr_warn("MDSS MDP IRQ-%x is NOT set, mask=%x\n",
-				irq.irq_mask, mdata->mdp_irq_mask[irq.reg_idx]);
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		mask = MDSS_MDP_INTR_WB_2_DONE >> 2;
 	} else {
-		mdata->mdp_irq_mask[irq.reg_idx] &= ~irq.irq_mask;
+		mask = irq.irq_mask;
+	}
+
+	spin_lock_irqsave(&mdp_lock, irq_flags);
+	if (!(mdata->mdp_irq_mask[irq.reg_idx] & mask)) {
+		pr_warn("MDSS MDP IRQ-%x is NOT set, mask=%x\n",
+				mask, mdata->mdp_irq_mask[irq.reg_idx]);
+	} else {
+		mdata->mdp_irq_mask[irq.reg_idx] &= ~mask;
 		writel_relaxed(mdata->mdp_irq_mask[irq.reg_idx],
 				mdata->mdp_base + reg.en_off);
 		if (!is_mdp_irq_enabled())
@@ -879,6 +917,7 @@ void mdss_mdp_intr_check_and_clear(u32 intr_type, u32 intf_num)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_mdp_intr_reg reg;
 	struct mdss_mdp_irq irq;
+	u32 mask;
 
 	irq_idx = mdss_mdp_intr2index(intr_type, intf_num);
 	if (irq_idx < 0) {
@@ -889,13 +928,22 @@ void mdss_mdp_intr_check_and_clear(u32 intr_type, u32 intf_num)
 	irq =  mdp_irq_map[irq_idx];
 	reg = mdp_intr_reg[irq.reg_idx];
 
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		mask = MDSS_MDP_INTR_WB_2_DONE >> 2;
+	} else {
+		mask = irq.irq_mask;
+	}
+
 	spin_lock_irqsave(&mdp_lock, irq_flags);
-	status = irq.irq_mask & readl_relaxed(mdata->mdp_base +
+	status = mask & readl_relaxed(mdata->mdp_base +
 			reg.status_off);
 	if (status) {
 		pr_debug("clearing irq: intr_type:%d, intf_num:%d\n",
 				intr_type, intf_num);
-		writel_relaxed(irq.irq_mask, mdata->mdp_base + reg.clr_off);
+		writel_relaxed(mask, mdata->mdp_base + reg.clr_off);
 	}
 	spin_unlock_irqrestore(&mdp_lock, irq_flags);
 }
@@ -932,6 +980,7 @@ void mdss_mdp_irq_disable_nosync(u32 intr_type, u32 intf_num)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_mdp_intr_reg reg;
 	struct mdss_mdp_irq irq;
+	u32 mask;
 
 	irq_idx = mdss_mdp_intr2index(intr_type, intf_num);
 	if (irq_idx < 0) {
@@ -942,11 +991,20 @@ void mdss_mdp_irq_disable_nosync(u32 intr_type, u32 intf_num)
 	irq = mdp_irq_map[irq_idx];
 	reg = mdp_intr_reg[irq.reg_idx];
 
-	if (!(mdata->mdp_irq_mask[irq.reg_idx] & irq.irq_mask)) {
-		pr_warn("MDSS MDP IRQ-%x is NOT set, mask=%x\n",
-				irq.irq_mask, mdata->mdp_irq_mask[irq.reg_idx]);
+	if ((intr_type == MDSS_MDP_IRQ_TYPE_WB_WFD_COMP) && 
+		(intf_num == 0) &&
+		((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+		(mdata->mdp_rev == MDSS_MDP_HW_REV_111))) {
+		mask = MDSS_MDP_INTR_WB_2_DONE >> 2;
 	} else {
-		mdata->mdp_irq_mask[irq.reg_idx] &= ~irq.irq_mask;
+		mask = irq.irq_mask;
+	}
+
+	if (!(mdata->mdp_irq_mask[irq.reg_idx] & mask)) {
+		pr_warn("MDSS MDP IRQ-%x is NOT set, mask=%x\n",
+				mask, mdata->mdp_irq_mask[irq.reg_idx]);
+	} else {
+		mdata->mdp_irq_mask[irq.reg_idx] &= ~mask;
 		writel_relaxed(mdata->mdp_irq_mask[irq.reg_idx],
 				mdata->mdp_base + reg.en_off);
 		if (!is_mdp_irq_enabled())
@@ -1036,6 +1094,14 @@ irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 		isr &= mask;
 		if (isr == 0)
 			continue;
+
+		if ((mdata->mdp_rev == MDSS_MDP_HW_REV_108) ||
+			(mdata->mdp_rev == MDSS_MDP_HW_REV_111)) {
+			if (isr & (MDSS_MDP_INTR_WB_2_DONE >> 2)) {
+				isr &= ~(MDSS_MDP_INTR_WB_2_DONE >> 2);
+				isr |= MDSS_MDP_INTR_WB_2_DONE;
+			}
+		}
 
 		for (j = 0; j < ARRAY_SIZE(mdp_irq_map); j++)
 			if (mdp_irq_map[j].reg_idx == i &&
@@ -4015,6 +4081,8 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 			mdata->wfd_mode = MDSS_MDP_WFD_SHARED;
 		} else if (!strcmp(wfd_data, "dedicated")) {
 			mdata->wfd_mode = MDSS_MDP_WFD_DEDICATED;
+		} else if (!strcmp(wfd_data, "intf_no_dspp")) {
+			mdata->wfd_mode = MDSS_MDP_WFD_INTF_NO_DSPP;
 		} else {
 			pr_debug("wfd default mode: Shared\n");
 			mdata->wfd_mode = MDSS_MDP_WFD_SHARED;

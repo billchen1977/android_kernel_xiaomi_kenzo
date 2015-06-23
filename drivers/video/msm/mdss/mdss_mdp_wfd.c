@@ -209,6 +209,17 @@ int mdss_mdp_wfd_setup(struct mdss_mdp_wfd *wfd,
 		} else {
 			ctl->mfd->split_mode = MDP_SPLIT_MODE_NONE;
 		}
+	} else if (ctl->mdata->wfd_mode == MDSS_MDP_WFD_INTF_NO_DSPP) {
+		ctl->mixer_left = mdss_mdp_mixer_alloc(ctl,
+			MDSS_MDP_MIXER_TYPE_INTF_NO_DSPP, (width > max_mixer_width), 0);
+		if (width > max_mixer_width) {
+			ctl->mixer_right = mdss_mdp_mixer_alloc(ctl,
+				MDSS_MDP_MIXER_TYPE_INTF_NO_DSPP, true, 0);
+			ctl->mfd->split_mode = MDP_DUAL_LM_SINGLE_DISPLAY;
+			width = width / 2;
+		} else {
+			ctl->mfd->split_mode = MDP_SPLIT_MODE_NONE;
+		}
 	} else if (width > max_mixer_width) {
 		pr_err("width > max_mixer_width supported only in MDSS_MDP_WB_INTF\n");
 		goto wfd_setup_error;
