@@ -24,6 +24,7 @@ enum bus_profile {
 	VIDC_BUS_PROFILE_NORMAL			= BIT(0),
 	VIDC_BUS_PROFILE_LOW			= BIT(1),
 	VIDC_BUS_PROFILE_UBWC			= BIT(2),
+	VIDC_BUS_PROFILE_LOW_LATENCY	= BIT(3),
 };
 
 struct bus_profile_entry {
@@ -119,7 +120,9 @@ static int msm_vidc_table_get_target_freq(struct devfreq *dev,
 		}
 
 		profile = VIDC_BUS_PROFILE_NORMAL;
-		if (data->color_formats[0] == HAL_COLOR_FORMAT_NV12_TP10_UBWC ||
+		if (data->power_mode == VIDC_POWER_LOW_LATENCY)
+			profile = VIDC_BUS_PROFILE_LOW_LATENCY;
+		else if (data->color_formats[0] == HAL_COLOR_FORMAT_NV12_TP10_UBWC ||
 			data->color_formats[0] == HAL_COLOR_FORMAT_NV12_UBWC)
 			profile = VIDC_BUS_PROFILE_UBWC;
 
@@ -260,6 +263,8 @@ static int msm_vidc_load_bus_table(struct platform_device *pdev,
 			entry->profile = VIDC_BUS_PROFILE_LOW;
 		else if (of_find_property(child_node, "qcom,ubwc-mode", NULL))
 			entry->profile = VIDC_BUS_PROFILE_UBWC;
+		else if (of_find_property(child_node, "qcom,low-latency-mode", NULL))
+			entry->profile = VIDC_BUS_PROFILE_LOW_LATENCY;
 		else
 			entry->profile = VIDC_BUS_PROFILE_NORMAL;
 
