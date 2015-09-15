@@ -27,6 +27,7 @@
 #include "kgsl_device.h"
 #include "kgsl_log.h"
 #include "adreno.h"
+#include "kgsl_mmu.h"
 
 /*
  * The user can set this from debugfs to force failed memory allocations to
@@ -312,6 +313,13 @@ kgsl_sharedmem_init_sysfs(void)
 		drv_attr_list);
 }
 
+static int kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
+				struct kgsl_pagetable *pagetable,
+				uint64_t size);
+
+static int kgsl_cma_alloc_secure(struct kgsl_device *device,
+			struct kgsl_memdesc *memdesc, uint64_t size);
+
 static int kgsl_allocate_secure(struct kgsl_device *device,
 				struct kgsl_memdesc *memdesc,
 				struct kgsl_pagetable *pagetable,
@@ -333,13 +341,11 @@ int kgsl_allocate_user(struct kgsl_device *device,
 {
 	int ret;
 
-	if (size == 0)
-		return -EINVAL;
-
 	memdesc->flags = flags;
 
 	if (kgsl_mmu_get_mmutype() == KGSL_MMU_TYPE_NONE)
-		ret = kgsl_cma_alloc_coherent(device, memdesc, pagetable, size);
+		ret = kgsl_sharedmem_alloc_contig(device, memdesc,
+				pagetable, size);
 	else if (flags & KGSL_MEMFLAGS_SECURE)
 		ret = kgsl_allocate_secure(device, memdesc, pagetable, size);
 	else
@@ -667,7 +673,7 @@ static inline int get_page_size(size_t size, unsigned int align)
 #endif
 
 static int
-_kgsl_sharedmem_page_alloc(struct kgsl_memdesc *memdesc,
+kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
 			struct kgsl_pagetable *pagetable,
 			uint64_t size)
 {
@@ -695,9 +701,6 @@ _kgsl_sharedmem_page_alloc(struct kgsl_memdesc *memdesc,
 
 	if (align < ilog2(page_size))
 		kgsl_memdesc_set_align(memdesc, ilog2(page_size));
-
-	if (size > SIZE_MAX)
-		return -EINVAL;
 
 	/*
 	 * There needs to be enough room in the page array to be able to
@@ -872,19 +875,6 @@ done:
 
 	return ret;
 }
-
-int
-kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
-			    struct kgsl_pagetable *pagetable,
-			    uint64_t size)
-{
-	size = PAGE_ALIGN(size);
-	if (size == 0)
-		return -EINVAL;
-
-	return _kgsl_sharedmem_page_alloc(memdesc, pagetable, size);
-}
-EXPORT_SYMBOL(kgsl_sharedmem_page_alloc_user);
 
 void kgsl_sharedmem_free(struct kgsl_memdesc *memdesc)
 {
@@ -1070,14 +1060,13 @@ void kgsl_get_memory_usage(char *name, size_t name_size, uint64_t memflags)
 }
 EXPORT_SYMBOL(kgsl_get_memory_usage);
 
-int kgsl_cma_alloc_coherent(struct kgsl_device *device,
+int kgsl_sharedmem_alloc_contig(struct kgsl_device *device,
 			struct kgsl_memdesc *memdesc,
 			struct kgsl_pagetable *pagetable, uint64_t size)
 {
 	int result = 0;
 
-	size = ALIGN(size, PAGE_SIZE);
-
+	size = PAGE_ALIGN(size);
 	if (size == 0 || size > SIZE_MAX)
 		return -EINVAL;
 
@@ -1100,6 +1089,9 @@ int kgsl_cma_alloc_coherent(struct kgsl_device *device,
 
 	/* Record statistics */
 
+	if (kgsl_mmu_get_mmutype() == KGSL_MMU_TYPE_NONE)
+		memdesc->gpuaddr = memdesc->physaddr;
+
 	KGSL_STATS_ADD(size, kgsl_driver.stats.coherent,
 		       kgsl_driver.stats.coherent_max);
 
@@ -1109,7 +1101,7 @@ err:
 
 	return result;
 }
-EXPORT_SYMBOL(kgsl_cma_alloc_coherent);
+EXPORT_SYMBOL(kgsl_sharedmem_alloc_contig);
 
 static int scm_lock_chunk(struct kgsl_memdesc *memdesc, int lock)
 {
@@ -1165,7 +1157,7 @@ static int scm_lock_chunk(struct kgsl_memdesc *memdesc, int lock)
 	return result;
 }
 
-int kgsl_cma_alloc_secure(struct kgsl_device *device,
+static int kgsl_cma_alloc_secure(struct kgsl_device *device,
 			struct kgsl_memdesc *memdesc, uint64_t size)
 {
 	struct kgsl_iommu *iommu = device->mmu.priv;
@@ -1173,14 +1165,11 @@ int kgsl_cma_alloc_secure(struct kgsl_device *device,
 	struct kgsl_pagetable *pagetable = device->mmu.securepagetable;
 	size_t aligned;
 
-	if (size == 0)
-		return -EINVAL;
-
 	/* Align size to 1M boundaries */
 	aligned = ALIGN(size, SZ_1M);
 
 	/* The SCM call uses an unsigned int for the size */
-	if (aligned > UINT_MAX)
+	if (aligned == 0 || aligned > UINT_MAX)
 		return -EINVAL;
 
 	/*
@@ -1231,7 +1220,6 @@ err:
 
 	return result;
 }
-EXPORT_SYMBOL(kgsl_cma_alloc_secure);
 
 /**
  * kgsl_cma_unlock_secure() - Unlock secure memory by calling TZ
