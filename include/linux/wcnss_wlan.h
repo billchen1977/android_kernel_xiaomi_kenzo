@@ -44,6 +44,7 @@ struct wcnss_wlan_config {
 	void __iomem	*msm_wcnss_base;
 	int	iris_id;
 	int	vbatt;
+	int	pc_disable_latency;
 	struct vregs_level pronto_vlevel[PRONTO_REGULATORS];
 	struct vregs_level iris_vlevel[IRIS_REGULATORS];
 };

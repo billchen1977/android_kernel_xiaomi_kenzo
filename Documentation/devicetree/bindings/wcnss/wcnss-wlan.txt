@@ -59,6 +59,8 @@ support for pronto hardware.
 to use for VBATT feature.
 - qcom,has-a2xb-split-reg: boolean flag to determine A2xb split timeout limit
 register is available or not.
+- qcom,pc-disable-latency: is a configurable value to configure
+pc disable latency value.
 
 Example:
 
