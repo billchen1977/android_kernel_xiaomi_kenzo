@@ -36,21 +36,9 @@
 		qcom,cam-vreg-op-mode = <80000>;
 	};
 
-	actuator1: qcom,actuator@1 {
+	actuator1: qcom,actuator@1c {
 		cell-index = <1>;
 		reg = <0x1c>;
-		compatible = "qcom,actuator";
-		qcom,cci-master = <0>;
-		cam_vaf-supply = <&pm8950_l17>;
-		qcom,cam-vreg-name = "cam_vaf";
-		qcom,cam-vreg-min-voltage = <2850000>;
-		qcom,cam-vreg-max-voltage = <2850000>;
-		qcom,cam-vreg-op-mode = <80000>;
-	};
-
-	actuator2: qcom,actuator@1c {
-		cell-index = <0>;
-		reg = <0x18>;
 		compatible = "qcom,actuator";
 		qcom,cci-master = <0>;
 		cam_vaf-supply = <&pm8950_l17>;
