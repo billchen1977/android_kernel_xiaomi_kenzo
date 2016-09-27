@@ -1108,4 +1108,7 @@ config TOUCHSCREEN_FT5346_GESTURE
 
          If unsure, say N.
 
+config WAKE_GESTURES
+	bool "wake gestures"
+
 endif

@@ -91,3 +91,4 @@ obj-$(CONFIG_TOUCHSCREEN_FT5346)	+= lct_tp_fm_info.o
 obj-$(CONFIG_TOUCHSCREEN_FT5346)	+= lct_ctp_upgrade.o
 obj-$(CONFIG_TOUCHSCREEN_FT5346)	+= lct_if_ctp_upgrade.o
 obj-$(CONFIG_TOUCHSCREEN_FT5346_GESTURE)	+= lct_ctp_gesture.o
+obj-$(CONFIG_WAKE_GESTURES)		+= wake_gestures.o
