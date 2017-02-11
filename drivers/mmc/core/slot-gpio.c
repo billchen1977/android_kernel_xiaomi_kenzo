@@ -17,6 +17,11 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+int sd_slot_plugout = 0;
+extern int sdhci_msm_disable_sd_vdd(void);
+#endif
+
 struct mmc_gpio {
 	int ro_gpio;
 	int cd_gpio;
@@ -62,6 +67,10 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 	if (unlikely(status < 0))
 		goto out;
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	sd_slot_plugout = gpio_get_value_cansleep(ctx->cd_gpio);
+#endif
+
 	if (status ^ ctx->status) {
 		pr_info("%s: slot status change detected (%d -> %d), GPIO_ACTIVE_%s\n",
 				mmc_hostname(host), ctx->status, status,
@@ -70,7 +79,16 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 		ctx->status = status;
 
 		/* Schedule a card detection after a debounce timeout */
-		mmc_detect_change(host, msecs_to_jiffies(200));
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+		if (sd_slot_plugout) {
+			if ((mmc_hostname(host) != NULL) && (!strcmp(mmc_hostname(host), "mmc1")))
+				sdhci_msm_disable_sd_vdd();
+			mmc_detect_change(host, msecs_to_jiffies(0));
+		} else
+			mmc_detect_change(host, msecs_to_jiffies(1));
+#else
+		mmc_detect_change(host, msecs_to_jiffies(1));
+#endif
 	}
 out:
 
