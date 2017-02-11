@@ -1143,6 +1143,11 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
  * Return: positive value if the panel is in good state, negative value or
  * zero otherwise.
  */
+
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+extern int esd_backlight;
+#endif
+
 int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	int ret = 0;
@@ -1199,6 +1204,13 @@ int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	mdss_dsi_clk_ctrl(ctrl_pdata, ctrl_pdata->dsi_clk_handle,
 			  MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_OFF);
 	pr_debug("%s: Read register done with ret: %d\n", __func__, ret);
+
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	if (ret == 1)
+		esd_backlight = 0;
+	else
+		esd_backlight = 1;
+#endif
 
 	return ret;
 }

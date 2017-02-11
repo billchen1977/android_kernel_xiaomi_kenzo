@@ -1730,6 +1730,10 @@ static int mdss_fb_blank_blank(struct msm_fb_data_type *mfd,
 	return ret;
 }
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+int esd_backlight = 0;
+#endif
+
 static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
@@ -1792,6 +1796,20 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 		mutex_lock(&mfd->bl_lock);
 		if (!mfd->allow_bl_update) {
 			mfd->allow_bl_update = true;
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+			/*
+			 * If in AD calibration mode then frameworks would not
+			 * be allowed to update backlight hence post unblank
+			 * the backlight would remain 0 (0 is set in blank).
+			 * Hence resetting back to calibration mode value
+			 */
+			if (IS_CALIB_MODE_BL(mfd))
+				mdss_fb_set_backlight(mfd, mfd->calib_mode_bl);
+			else if ((!mfd->panel_info->mipi.post_init_delay ||
+				(mfd->unset_bl_level != U32_MAX)) && esd_backlight)
+				mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+			esd_backlight = 0;
+#else
 			/*
 			 * If in AD calibration mode then frameworks would not
 			 * be allowed to update backlight hence post unblank
@@ -1803,6 +1821,7 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 			else if ((!mfd->panel_info->mipi.post_init_delay) &&
 				(mfd->unset_bl_level != U32_MAX))
 				mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+#endif
 
 			/*
 			 * it blocks the backlight update between unblank and
