@@ -18,6 +18,11 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+int sd_slot_plugout = 0;
+extern int sdhci_msm_disable_sd_vdd(void);
+#endif
+
 struct mmc_gpio {
 	struct gpio_desc *ro_gpio;
 	struct gpio_desc *cd_gpio;
@@ -32,8 +37,21 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 	/* Schedule a card detection after a debounce timeout */
 	struct mmc_host *host = dev_id;
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	struct mmc_gpio *ctx = host->slot.handler_priv;
+
+	sd_slot_plugout = gpiod_get_value_cansleep(ctx->cd_gpio);
+	host->trigger_card_event = true;
+	if (sd_slot_plugout) {
+		if ((mmc_hostname(host) != NULL) && (!strcmp(mmc_hostname(host), "mmc1")))
+			sdhci_msm_disable_sd_vdd();
+		mmc_detect_change(host, msecs_to_jiffies(0));
+	} else
+		mmc_detect_change(host, msecs_to_jiffies(1));
+#else
 	host->trigger_card_event = true;
 	mmc_detect_change(host, msecs_to_jiffies(200));
+#endif
 
 	return IRQ_HANDLED;
 }
