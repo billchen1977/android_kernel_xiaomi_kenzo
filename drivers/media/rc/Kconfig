@@ -361,4 +361,13 @@ config IR_MSM_GENI_TX
 	   Say Y here to enable support for integrated infrared transmitter
 	   for MSM family processors.
 
+config IR_PWM
+	tristate "PWM IR remote control"
+	depends on RC_CORE
+	---help---
+	   Say Y if you want to use PWM based IR.
+
+	   To compile this driver as a module, choose M here: the module will
+	   be called pwm-ir.
+
 endif #RC_DEVICES
