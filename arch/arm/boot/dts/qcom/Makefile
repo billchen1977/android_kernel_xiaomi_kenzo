@@ -231,6 +231,9 @@ dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-rumi.dtb \
 	mdm9607-rcm.dtb \
 	mdm9607-mtp-sdcard.dtb
 
+ifeq ($(CONFIG_MACH_XIAOMI_KENZO),y)
+dtb-$(CONFIG_ARCH_MSM8916) += kenzo-msm8956-mtp.dtb
+else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8952-qrd-skum.dtb \
        msm8952-cdp.dtb \
        msm8952-ext-codec-cdp.dtb \
@@ -266,6 +269,7 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8952-qrd-skum.dtb \
        apq8076-v1.1-mtp.dtb \
        apq8076-v1.1-cdp.dtb \
        apq8076-v1.1-mtp-rome.dtb
+endif
 
 dtb-$(CONFIG_ARCH_MSM8909) += msm8909-pm8916-mtp.dtb \
 	msm8909w-wtp.dtb \
