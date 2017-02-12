@@ -352,4 +352,11 @@ config SND_SOC_MDM9640
 	 interfaces with DSP, also it will enable
 	 the machine drivers and the corresponding
 	 DAI-links.
+
+config SPEAKER_EXT_PA
+	default n
+	bool "Speaker external PA"
+	help
+	  Support for external PA.
+
 endmenu
