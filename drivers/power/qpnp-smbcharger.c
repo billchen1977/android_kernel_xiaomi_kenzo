@@ -40,6 +40,10 @@
 #include <linux/ktime.h>
 #include "pmic-voter.h"
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+int FG_charger_status = 0;
+#endif
+
 /* Mask/Bit helpers */
 #define _SMB_MASK(BITS, POS) \
 	((unsigned char)(((1 << (BITS)) - 1) << (POS)))
@@ -450,19 +454,31 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
+#ifdef CONFIG_MACH_XIAOMI
+static int smbchg_default_hvdcp_icl_ma = 1500;
+#else
 static int smbchg_default_hvdcp_icl_ma = 1800;
+#endif
 module_param_named(
 	default_hvdcp_icl_ma, smbchg_default_hvdcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
+#ifdef CONFIG_MACH_XIAOMI
+static int smbchg_default_hvdcp3_icl_ma = 2000;
+#else
 static int smbchg_default_hvdcp3_icl_ma = 3000;
+#endif
 module_param_named(
 	default_hvdcp3_icl_ma, smbchg_default_hvdcp3_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
+#ifdef CONFIG_MACH_XIAOMI
+static int smbchg_default_dcp_icl_ma = 2000;
+#else
 static int smbchg_default_dcp_icl_ma = 1800;
+#endif
 module_param_named(
 	default_dcp_icl_ma, smbchg_default_dcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -1584,7 +1600,7 @@ static void smbchg_usb_update_online_work(struct work_struct *work)
 						USER_EN_VOTER);
 	int online;
 
-	online = user_enabled && chip->usb_present && !chip->very_weak_charger;
+	online = user_enabled && chip->usb_present;
 
 	mutex_lock(&chip->usb_set_online_lock);
 	if (chip->usb_online != online) {
@@ -4444,8 +4460,14 @@ reschedule:
 static int smbchg_charging_status_change(struct smbchg_chip *chip)
 {
 	smbchg_vfloat_adjust_check(chip);
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	FG_charger_status = get_prop_batt_status(chip);
+	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
+			FG_charger_status);
+#else
 	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
 			get_prop_batt_status(chip));
+#endif
 	return 0;
 }
 
@@ -4486,7 +4508,11 @@ static int smbchg_set_optimal_charging_mode(struct smbchg_chip *chip, int type)
 	return 0;
 }
 
+#ifdef CONFIG_MACH_XIAOMI
+#define DEFAULT_SDP_MA		500
+#else
 #define DEFAULT_SDP_MA		100
+#endif
 #define DEFAULT_CDP_MA		1500
 static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 						enum power_supply_type type)
@@ -4737,7 +4763,7 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 		chip->typec_current_ma = 0;
 	/* cancel/wait for hvdcp pending work if any */
 	cancel_delayed_work_sync(&chip->hvdcp_det_work);
-	smbchg_change_usb_supply_type(chip, POWER_SUPPLY_TYPE_UNKNOWN);
+	smbchg_change_usb_supply_type(chip, POWER_SUPPLY_TYPE_USB);
 	if (!chip->skip_usb_notification) {
 		pr_smb(PR_MISC, "setting usb psy present = %d\n",
 				chip->usb_present);
@@ -4868,8 +4894,14 @@ void update_usb_status(struct smbchg_chip *chip, bool usb_present, bool force)
 	}
 
 	/* update FG */
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	FG_charger_status = get_prop_batt_status(chip);
+	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
+			FG_charger_status);
+#else
 	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
 			get_prop_batt_status(chip));
+#endif
 unlock:
 	mutex_unlock(&chip->usb_status_lock);
 }
@@ -5966,7 +5998,11 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		val->intval = get_prop_batt_health(chip);
 		break;
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+#ifdef CONFIG_MACH_XIAOMI
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LIPO;
+#else
 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
+#endif
 		break;
 	case POWER_SUPPLY_PROP_FLASH_CURRENT_MAX:
 		val->intval = smbchg_calc_max_flash_current(chip);
@@ -6670,8 +6706,14 @@ static irqreturn_t usbid_change_handler(int irq, void *_chip)
 		pr_smb(PR_STATUS, "OTG detected\n");
 
 	/* update FG */
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	FG_charger_status = get_prop_batt_status(chip);
+	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
+			FG_charger_status);
+#else
 	set_property_on_fg(chip, POWER_SUPPLY_PROP_STATUS,
 			get_prop_batt_status(chip));
+#endif
 
 	return IRQ_HANDLED;
 }
