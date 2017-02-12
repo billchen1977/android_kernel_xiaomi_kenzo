@@ -25,6 +25,19 @@
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+int kenzo_boardid = 2;
+static int __init setup_kenzo_boardid(char *str)
+{
+	if (kstrtoint(str, 0, &kenzo_boardid))
+		pr_warn("Unable to setup kenzo_boardid\n");
+
+	pr_info("kenzo_boardid=%d\n", kenzo_boardid);
+	return 1;
+}
+__setup("androidboot.boardID=", setup_kenzo_boardid);
+#endif
+
 int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 	int num_vreg, struct msm_sensor_power_setting *power_setting,
 	uint16_t power_setting_size)
@@ -488,6 +501,9 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 	const char *seq_name = NULL;
 	uint32_t *array = NULL;
 	struct msm_sensor_power_setting *ps;
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	bool is_back_camera = false;
+#endif
 
 	struct msm_sensor_power_setting *power_setting;
 	uint16_t *power_setting_size, size = 0;
@@ -496,10 +512,19 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 	if (!power_info)
 		return -EINVAL;
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	is_back_camera = of_property_read_bool(of_node, "qcom,is-back-camera");
+#endif
+
 	power_setting = power_info->power_setting;
 	power_setting_size = &power_info->power_setting_size;
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	count = of_property_count_strings(of_node, (is_back_camera == true && kenzo_boardid == 0) ?
+		"qcom,cam-power-seq-type-boardid0" : "qcom,cam-power-seq-type");
+#else
 	count = of_property_count_strings(of_node, "qcom,cam-power-seq-type");
+#endif
 	*power_setting_size = count;
 
 	CDBG("%s qcom,cam-power-seq-type count %d\n", __func__, count);
@@ -516,9 +541,16 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 	power_info->power_setting = ps;
 
 	for (i = 0; i < count; i++) {
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+		rc = of_property_read_string_index(of_node,
+			(is_back_camera == true && kenzo_boardid == 0) ?
+				"qcom,cam-power-seq-type-boardid0" : "qcom,cam-power-seq-type", i,
+			&seq_name);
+#else
 		rc = of_property_read_string_index(of_node,
 			"qcom,cam-power-seq-type", i,
 			&seq_name);
+#endif
 		CDBG("%s seq_name[%d] = %s\n", __func__, i,
 			seq_name);
 		if (rc < 0) {
@@ -550,9 +582,16 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 
 
 	for (i = 0; i < count; i++) {
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+		rc = of_property_read_string_index(of_node,
+			(is_back_camera == true && kenzo_boardid == 0) ?
+				"qcom,cam-power-seq-val-boardid0" : "qcom,cam-power-seq-val", i,
+			&seq_name);
+#else
 		rc = of_property_read_string_index(of_node,
 			"qcom,cam-power-seq-val", i,
 			&seq_name);
+#endif
 		CDBG("%s seq_name[%d] = %s\n", __func__, i,
 			seq_name);
 		if (rc < 0) {
@@ -672,6 +711,11 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		ps, sizeof(*ps) * size);
 
 	power_info->power_down_setting_size = size;
+
+#ifdef CONFIG_MACH_XIAOMI
+	for (i = 0; i < size; i++)
+		power_info->power_down_setting[i].config_val = 0;
+#endif
 
 	if (need_reverse) {
 		int c, end = size - 1;

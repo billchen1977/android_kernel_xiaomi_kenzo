@@ -26,6 +26,15 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+uint8_t g_s5k3p3_otp_module_id = 0;
+uint8_t g_s5k3p3_otp_vcm_id = 0;
+uint8_t g_ov16880_otp_module_id = 0;
+uint8_t g_ov5670_otp_module_id = 0;
+uint8_t g_s5k5e8_otp_month = 0;
+uint8_t g_s5k5e8_otp_day = 0;
+uint8_t g_s5k5e8_otp_lens_id = 0;
+#endif
 /**
   * msm_get_read_mem_size - Get the total size for allocation
   * @eeprom_map_array:	mem map
@@ -134,6 +143,82 @@ static uint32_t msm_eeprom_match_crc(struct msm_eeprom_memory_block_t *data)
 	}
 	return ret;
 }
+
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+static int ov5670_read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
+			      struct msm_eeprom_memory_block_t *block)
+{
+	int rc = 0;
+	uint8_t temp;
+	uint8_t *memptr = block->mapdata;
+	int i = 0;
+
+	if (!e_ctrl) {
+		pr_err("%s e_ctrl is NULL", __func__);
+		return -EINVAL;
+	}
+
+	e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x5002, (uint16_t *)&temp, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x5002, temp&(~0x08), MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x100, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+
+	for (i = 0x7010; i <= 0x7029; i++) {
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), i, 0x0, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0)
+			return rc;
+	}
+
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d84, 0xC0, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d88, 0x70, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d89, 0x10, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d8A, 0x70, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d8B, 0x29, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x3d81, 0x1, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+
+	msleep(50);
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(&(e_ctrl->i2c_client), 0x7010, memptr, 26);
+	if (rc < 0)
+		return rc;
+	msleep(30);
+	for (i = 0x7010; i <= 0x7029; i++) {
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), i, 0x0, MSM_CAMERA_I2C_BYTE_DATA);
+		if (rc < 0)
+			return rc;
+	}
+
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x100, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x5002, (uint16_t *)&temp, MSM_CAMERA_I2C_BYTE_DATA);
+	if (rc < 0)
+		return rc;
+	rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x5002, temp|0x08, MSM_CAMERA_I2C_BYTE_DATA);
+
+	return rc;
+}
+#endif
 
 /**
   * read_eeprom_memory() - read map data into buffer
@@ -1576,6 +1661,60 @@ static long msm_eeprom_subdev_fops_ioctl32(struct file *file, unsigned int cmd,
 
 #endif
 
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+static void s5k3p3_set_otp_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
+{
+	if (e_ctrl->cal_data.mapdata[0] == 1) {
+		g_s5k3p3_otp_module_id = (uint8_t)(e_ctrl->cal_data.mapdata[11]);
+		if (g_s5k3p3_otp_module_id != 0x02) {
+			g_s5k3p3_otp_module_id = (uint8_t)(e_ctrl->cal_data.mapdata[2]);
+			if(g_s5k3p3_otp_module_id == 0x0f || g_s5k3p3_otp_module_id == 0x11 || g_s5k3p3_otp_module_id == 0x10)
+				g_s5k3p3_otp_vcm_id = (uint8_t)(e_ctrl->cal_data.mapdata[6]);
+		}
+	}
+}
+
+static void ov16880_set_otp_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
+{
+	if (e_ctrl->cal_data.mapdata[0] == 1) {
+		g_ov16880_otp_module_id = (uint8_t)(e_ctrl->cal_data.mapdata[4]);
+		if (g_ov16880_otp_module_id != 0x01)
+			g_ov16880_otp_module_id = (uint8_t)(e_ctrl->cal_data.mapdata[12]);
+	}
+}
+
+static void ov5670_set_otp_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
+{
+	uint8_t mid = (uint8_t)(e_ctrl->cal_data.mapdata[0]);
+	uint8_t group_index = -1;
+
+	if ((mid & 0xC0) == 0x40)
+		group_index = 0;
+	else if ((mid & 0x30) == 0x10)
+		group_index = 1;
+	else if ((mid & 0x0C) == 0x04)
+		group_index = 2;
+
+	if (group_index == -1)
+	{
+		pr_err("%s: Invalid ov5670 group index\n", __func__);
+		return;
+	}
+
+	g_ov5670_otp_module_id = (uint8_t)(e_ctrl->cal_data.mapdata[5 * group_index + 1]);
+}
+
+static void s5k5e8_set_otp_module_id(struct msm_eeprom_ctrl_t *e_ctrl)
+{
+	if (e_ctrl->cal_data.mapdata[0] == 1)
+	{
+		g_s5k5e8_otp_month = (uint8_t)(e_ctrl->cal_data.mapdata[3]);
+		g_s5k5e8_otp_day = (uint8_t)(e_ctrl->cal_data.mapdata[4]);
+		g_s5k5e8_otp_lens_id = (uint8_t)(e_ctrl->cal_data.mapdata[5]);
+	}
+}
+#endif
+
 static int msm_eeprom_platform_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -1716,6 +1855,12 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 			pr_err("failed rc %d\n", rc);
 			goto memdata_free;
 		}
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+		if ((eb_info->eeprom_name != NULL)
+			&& (strcmp(eb_info->eeprom_name, "sunny_omi5f06") == 0))
+			rc = ov5670_read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
+		else
+#endif
 		rc = read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
 		if (rc < 0) {
 			pr_err("%s read_eeprom_memory failed\n", __func__);
@@ -1724,6 +1869,26 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		for (j = 0; j < e_ctrl->cal_data.num_data; j++)
 			CDBG("memory_data[%d] = 0x%X\n", j,
 				e_ctrl->cal_data.mapdata[j]);
+
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+		if (eb_info->eeprom_name != NULL)
+		{
+			if (strcmp(eb_info->eeprom_name, "s5k3p3_omida01") == 0 ||
+					strcmp(eb_info->eeprom_name, "s5k3p3_gt24c64") == 0 ||
+					strcmp(eb_info->eeprom_name, "s5k3p3_f16s01c") == 0 ||
+					strcmp(eb_info->eeprom_name, "s5k3p3_f3p3man") == 0 ) {
+				s5k3p3_set_otp_module_id(e_ctrl);
+			} else if (strcmp(eb_info->eeprom_name, "ov16880_f16v01a") == 0 ||
+					strcmp(eb_info->eeprom_name, "ov16880_omida05") == 0) {
+				ov16880_set_otp_module_id(e_ctrl);
+			} else if (strcmp(eb_info->eeprom_name, "sunny_omi5f06") == 0) {
+				ov5670_set_otp_module_id(e_ctrl);
+			} else if (strcmp(eb_info->eeprom_name, "s5k5e8_z5e8yab") == 0 ||
+					strcmp(eb_info->eeprom_name, "s5k5e8_yx13") == 0) {
+				s5k5e8_set_otp_module_id(e_ctrl);
+			}
+		}
+#endif
 
 		e_ctrl->is_supported |= msm_eeprom_match_crc(&e_ctrl->cal_data);
 
