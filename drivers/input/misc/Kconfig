@@ -756,4 +756,12 @@ config INPUT_DRV2667_HAPTICS
 	  To compile this driver as a module, choose M here: the
 	  module will be called drv260x-haptics.
 
+config INPUT_FPC1020
+	tristate "Fpc1020 fingerprint sensor support"
+	depends on SPI
+	help
+	  Say Y here if you have Fpc1020 sensor hooked to an SPI bus.
+
+source "drivers/input/misc/goodix/Kconfig"
+
 endif
