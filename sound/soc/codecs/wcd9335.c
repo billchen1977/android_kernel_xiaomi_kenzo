@@ -161,7 +161,11 @@ enum tasha_sido_voltage {
 	SIDO_VOLTAGE_NOMINAL_MV = 1100,
 };
 
+#ifdef CONFIG_MACH_XIAOMI
+static enum codec_variant codec_ver = WCD9326;
+#else
 static enum codec_variant codec_ver;
+#endif
 
 static int dig_core_collapse_enable = 1;
 module_param(dig_core_collapse_enable, int,
@@ -792,6 +796,9 @@ struct tasha_priv {
 	int swr_clk_users;
 	int native_clk_users;
 	int (*zdet_gpio_cb)(struct snd_soc_codec *codec, bool high);
+#if defined(CONFIG_SPEAKER_EXT_PA)
+	int (*spk_ext_pa_cb)(struct snd_soc_codec *codec, int enable);
+#endif
 
 	struct snd_info_entry *entry;
 	struct snd_info_entry *version_entry;
@@ -906,6 +913,17 @@ static void tasha_enable_sido_buck(struct snd_soc_codec *codec)
 	usleep_range(100, 110);
 	tasha->resmgr->sido_input_src = SIDO_SOURCE_RCO_BG;
 }
+
+#if defined(CONFIG_SPEAKER_EXT_PA)
+void tasha_spk_ext_pa_cb(int (*spk_ext_pa)(struct snd_soc_codec *codec,
+			int enable), struct snd_soc_codec *codec)
+{
+	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
+
+	printk("%s: Enter\n", __func__);
+	tasha->spk_ext_pa_cb = spk_ext_pa;
+}
+#endif
 
 static void tasha_cdc_sido_ccl_enable(struct tasha_priv *tasha, bool ccl_flag)
 {
@@ -3980,6 +3998,10 @@ static int tasha_codec_enable_lineout_pa(struct snd_soc_dapm_widget *w,
 					 int event)
 {
 	struct snd_soc_codec *codec = w->codec;
+#if defined(CONFIG_SPEAKER_EXT_PA)
+	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
+#endif
+
 	u16 lineout_vol_reg, lineout_mix_vol_reg;
 	int ret = 0;
 
@@ -4023,9 +4045,17 @@ static int tasha_codec_enable_lineout_pa(struct snd_soc_dapm_widget *w,
 		if (!(strcmp(w->name, "ANC LINEOUT1 PA")) ||
 		    !(strcmp(w->name, "ANC LINEOUT2 PA")))
 			ret = tasha_codec_enable_anc(w, kcontrol, event);
+#if defined(CONFIG_SPEAKER_EXT_PA)
+		if (tasha->spk_ext_pa_cb)
+			tasha->spk_ext_pa_cb(codec, true);
+#endif
 		tasha_codec_override(codec, CLS_AB, event);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+#if defined(CONFIG_SPEAKER_EXT_PA)
+		if (tasha->spk_ext_pa_cb)
+			tasha->spk_ext_pa_cb(codec, false);
+#endif
 		/* 5ms sleep is required after PA is disabled as per
 		 * HW requirement
 		 */
@@ -13802,7 +13832,11 @@ static int tasha_probe(struct platform_device *pdev)
 	tasha->swr_plat_data.handle_irq = tasha_swrm_handle_irq;
 
 	/* Register for Clock */
+#ifdef CONFIG_MACH_XIAOMI_KENZO
+	wcd_ext_clk = clk_get(tasha->wcd9xxx->dev, "wcd_pmi_clk");
+#else
 	wcd_ext_clk = clk_get(tasha->wcd9xxx->dev, "wcd_clk");
+#endif
 	if (IS_ERR(wcd_ext_clk)) {
 		dev_err(tasha->wcd9xxx->dev, "%s: clk get %s failed\n",
 			__func__, "wcd_ext_clk");

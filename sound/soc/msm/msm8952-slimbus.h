@@ -76,4 +76,9 @@ int msm895x_wsa881x_init(struct snd_soc_component *component);
 int msm8952_init_wsa_dev(struct platform_device *pdev,
 		struct snd_soc_card *card);
 void msm895x_free_auxdev_mem(struct platform_device *pdev);
+#if defined(CONFIG_SPEAKER_EXT_PA)
+void tasha_spk_ext_pa_cb(int (*spk_ext_pa)(struct snd_soc_codec *codec,
+			int enable), struct snd_soc_codec *codec);
+#endif
+
 #endif
