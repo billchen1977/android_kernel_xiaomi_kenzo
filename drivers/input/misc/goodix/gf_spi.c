@@ -74,7 +74,6 @@ struct gf_key_map key_map[] = {
 	{  "RIGHT",  KEY_RIGHT  },
 	{  "FORCE",  KEY_F9     },
 	{  "CLICK",  KEY_F19    },
-	{  "CAMERA", KEY_CAMERA },
 };
 
 
