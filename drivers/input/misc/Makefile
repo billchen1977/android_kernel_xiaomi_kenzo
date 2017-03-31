@@ -90,7 +90,6 @@ endif
 obj-$(CONFIG_SENSORS_MC3430)	+= mc3xxx.o
 obj-$(CONFIG_SENSORS_ISL29044A)	+= isl29044a.o
 
-obj-$(CONFIG_HALL)		+= hall.o
 obj-$(CONFIG_INPUT_FPC1020)		+= fpc1020_tee.o
 obj-$(CONFIG_FINGERPRINT_GOODIX_GF318M) += goodix/
 
