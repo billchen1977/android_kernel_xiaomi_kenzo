@@ -29,19 +29,6 @@ static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
 /* Static declaration */
 static struct msm_sensor_ctrl_t *g_sctrl[MAX_CAMERAS];
 
-#ifdef CONFIG_MACH_XIAOMI_KENZO
-int kenzo_boardid = 2;
-static int __init setup_kenzo_boardid(char *str)
-{
-	if (kstrtoint(str, 0, &kenzo_boardid))
-		pr_warn("Unable to setup kenzo_boardid\n");
-
-	pr_info("kenzo_boardid=%d\n", kenzo_boardid);
-	return 1;
-}
-__setup("androidboot.boardID=", setup_kenzo_boardid);
-#endif
-
 static int msm_sensor_platform_remove(struct platform_device *pdev)
 {
 	struct msm_sensor_ctrl_t  *s_ctrl;
@@ -517,17 +504,6 @@ static int32_t msm_sensor_get_power_down_settings(void *setting,
 	power_info->power_down_setting = pd;
 	power_info->power_down_setting_size = size_down;
 
-#ifdef CONFIG_MACH_XIAOMI_KENZO
-	if ((slave_info->camera_id == CAMERA_0) && (kenzo_boardid == 0)) {
-		for (i = 0; i < power_info->power_down_setting_size; i++) {
-			if (power_info->power_down_setting[i].seq_val == SENSOR_GPIO_VANA) {
-				power_info->power_down_setting[i].seq_type = SENSOR_VREG;
-				power_info->power_down_setting[i].seq_val = CAM_VANA;
-			}
-		}
-	}
-#endif
-
 	/* Print power setting */
 	for (i = 0; i < size_down; i++) {
 		CDBG("DOWN seq_type %d seq_val %d config_val %ld delay %d",
@@ -594,17 +570,6 @@ static int32_t msm_sensor_get_power_up_settings(void *setting,
 	/* Fill power up setting and power up setting size */
 	power_info->power_setting = pu;
 	power_info->power_setting_size = size;
-
-#ifdef CONFIG_MACH_XIAOMI_KENZO
-	if ((slave_info->camera_id == CAMERA_0) && (kenzo_boardid == 0)) {
-		for (i = 0; i < power_info->power_setting_size; i++) {
-			if (power_info->power_setting[i].seq_val == SENSOR_GPIO_VANA) {
-				power_info->power_setting[i].seq_type = SENSOR_VREG;
-				power_info->power_setting[i].seq_val = CAM_VANA;
-			}
-		}
-	}
-#endif
 
 	return rc;
 }

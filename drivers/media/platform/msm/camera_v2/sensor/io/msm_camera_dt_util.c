@@ -26,7 +26,16 @@
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
 #ifdef CONFIG_MACH_XIAOMI_KENZO
-extern int kenzo_boardid;
+int kenzo_boardid = 2;
+static int __init setup_kenzo_boardid(char *str)
+{
+	if (kstrtoint(str, 0, &kenzo_boardid))
+		pr_warn("Unable to setup kenzo_boardid\n");
+
+	pr_info("kenzo_boardid=%d\n", kenzo_boardid);
+	return 1;
+}
+__setup("androidboot.boardID=", setup_kenzo_boardid);
 #endif
 
 int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
@@ -672,6 +681,11 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		ps, sizeof(*ps) * size);
 
 	power_info->power_down_setting_size = size;
+
+#ifdef CONFIG_MACH_XIAOMI
+	for (i = 0; i < size; i++)
+		power_info->power_down_setting[i].config_val = 0;
+#endif
 
 	if (need_reverse) {
 		int c, end = size - 1;
