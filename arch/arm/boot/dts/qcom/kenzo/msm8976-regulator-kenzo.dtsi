@@ -649,7 +649,8 @@
 		qcom,cpr-ro-count = <8>;
 		qcom,cpr-init-voltage-as-ceiling;
 		qcom,cpr-init-voltage-adjustment =
-			<(-55000) 0 (-60000) 0 (60000) 0 (60000) 0 (50000)>;
+			<(-55000) (-55000) (-60000) (60000) 
+			(60000) (60000) (60000) (50000) (50000)>;
 		qcom,cpr-target-quotients =
 			<513  489  620  574  237 272 144 177>,
 			<575  547  688  638  272 312 169 206>,
