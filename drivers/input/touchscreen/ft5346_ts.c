@@ -658,6 +658,80 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int ft5x06_gpio_configure(struct ft5x06_ts_data *data, bool on)
+{
+	int err = 0;
+
+	if (on) {
+		if (gpio_is_valid(data->pdata->irq_gpio)) {
+			err = gpio_request(data->pdata->irq_gpio,
+						"ft5x06_irq_gpio");
+			if (err) {
+				dev_err(&data->client->dev,
+					"irq gpio request failed");
+				goto err_irq_gpio_req;
+			}
+
+			err = gpio_direction_input(data->pdata->irq_gpio);
+			if (err) {
+				dev_err(&data->client->dev,
+					"set_direction for irq gpio failed\n");
+				goto err_irq_gpio_dir;
+			}
+		}
+
+		if (gpio_is_valid(data->pdata->reset_gpio)) {
+			err = gpio_request(data->pdata->reset_gpio,
+						"ft5x06_reset_gpio");
+			if (err) {
+				dev_err(&data->client->dev,
+					"reset gpio request failed");
+				goto err_irq_gpio_dir;
+			}
+
+			err = gpio_direction_output(data->pdata->reset_gpio, 0);
+			if (err) {
+				dev_err(&data->client->dev,
+				"set_direction for reset gpio failed\n");
+				goto err_reset_gpio_dir;
+			}
+			msleep(data->pdata->hard_rst_dly);
+			gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+		}
+
+		return 0;
+	} else {
+		if (gpio_is_valid(data->pdata->irq_gpio))
+			gpio_free(data->pdata->irq_gpio);
+		if (gpio_is_valid(data->pdata->reset_gpio)) {
+			/*
+			 * This is intended to save leakage current
+			 * only. Even if the call(gpio_direction_input)
+			 * fails, only leakage current will be more but
+			 * functionality will not be affected.
+			 */
+			err = gpio_direction_input(data->pdata->reset_gpio);
+			if (err) {
+				dev_err(&data->client->dev,
+					"unable to set direction for gpio "
+					"[%d]\n", data->pdata->irq_gpio);
+			}
+			gpio_free(data->pdata->reset_gpio);
+		}
+
+		return 0;
+	}
+
+err_reset_gpio_dir:
+	if (gpio_is_valid(data->pdata->reset_gpio))
+		gpio_free(data->pdata->reset_gpio);
+err_irq_gpio_dir:
+	if (gpio_is_valid(data->pdata->irq_gpio))
+		gpio_free(data->pdata->irq_gpio);
+err_irq_gpio_req:
+	return err;
+}
+
 static int ft5x06_power_on(struct ft5x06_ts_data *data, bool on)
 {
 	int rc;
@@ -900,10 +974,154 @@ int ft5x05_gesture_mode_exit(struct i2c_client *client)
 }
 
 #ifdef CONFIG_PM
+static int ft5x06_ts_start(struct device *dev)
+{
+	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
+	int err;
+
+	if (data->pdata->power_on) {
+		err = data->pdata->power_on(true);
+		if (err) {
+			dev_err(dev, "power on failed");
+			return err;
+		}
+	} else {
+		err = ft5x06_power_on(data, true);
+		if (err) {
+			dev_err(dev, "power on failed");
+			return err;
+		}
+	}
+
+	if (data->ts_pinctrl) {
+		err = pinctrl_select_state(data->ts_pinctrl,
+				data->pinctrl_state_active);
+		if (err < 0)
+			dev_err(dev, "Cannot get active pinctrl state\n");
+	}
+
+	err = ft5x06_gpio_configure(data, true);
+	if (err < 0) {
+		dev_err(&data->client->dev,
+			"failed to put gpios in resue state\n");
+		goto err_gpio_configuration;
+	}
+
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+		msleep(data->pdata->hard_rst_dly);
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+	}
+
+	msleep(data->pdata->soft_rst_dly);
+
+	enable_irq(data->client->irq);
+	data->suspended = false;
+
+	return 0;
+
+err_gpio_configuration:
+	if (data->ts_pinctrl) {
+		err = pinctrl_select_state(data->ts_pinctrl,
+					data->pinctrl_state_suspend);
+		if (err < 0)
+			dev_err(dev, "Cannot get suspend pinctrl state\n");
+	}
+	if (data->pdata->power_on) {
+		err = data->pdata->power_on(false);
+		if (err)
+			dev_err(dev, "power off failed");
+	} else {
+		err = ft5x06_power_on(data, false);
+		if (err)
+			dev_err(dev, "power off failed");
+	}
+	return err;
+}
+
+static int ft5x06_ts_stop(struct device *dev)
+{
+	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
+	char txbuf[2];
+	int i, err;
+
+	disable_irq(data->client->irq);
+
+	/* release all touches */
+	for (i = 0; i < data->pdata->num_max_touches; i++) {
+		input_mt_slot(data->input_dev, i);
+		input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, 0);
+	}
+	input_mt_report_pointer_emulation(data->input_dev, false);
+	input_sync(data->input_dev);
+
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		txbuf[0] = FT_REG_PMODE;
+		txbuf[1] = FT_PMODE_HIBERNATE;
+		ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
+	}
+
+	if (data->pdata->power_on) {
+		err = data->pdata->power_on(false);
+		if (err) {
+			dev_err(dev, "power off failed");
+			goto pwr_off_fail;
+		}
+	} else {
+		err = ft5x06_power_on(data, false);
+		if (err) {
+			dev_err(dev, "power off failed");
+			goto pwr_off_fail;
+		}
+	}
+
+	if (data->ts_pinctrl) {
+		err = pinctrl_select_state(data->ts_pinctrl,
+					data->pinctrl_state_suspend);
+		if (err < 0)
+			dev_err(dev, "Cannot get suspend pinctrl state\n");
+	}
+
+	err = ft5x06_gpio_configure(data, false);
+	if (err < 0) {
+		dev_err(&data->client->dev,
+			"failed to put gpios in suspend state\n");
+		goto gpio_configure_fail;
+	}
+
+	data->suspended = true;
+
+	return 0;
+
+gpio_configure_fail:
+	if (data->ts_pinctrl) {
+		err = pinctrl_select_state(data->ts_pinctrl,
+					data->pinctrl_state_active);
+		if (err < 0)
+			dev_err(dev, "Cannot get active pinctrl state\n");
+	}
+	if (data->pdata->power_on) {
+		err = data->pdata->power_on(true);
+		if (err)
+			dev_err(dev, "power on failed");
+	} else {
+		err = ft5x06_power_on(data, true);
+		if (err)
+			dev_err(dev, "power on failed");
+	}
+pwr_off_fail:
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+		msleep(data->pdata->hard_rst_dly);
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+	}
+	enable_irq(data->client->irq);
+	return err;
+}
+
 static int ft5x06_ts_suspend(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
-	char txbuf[2], i;
 	int err;
 
 #ifdef FT_GESTURE
@@ -937,48 +1155,7 @@ static int ft5x06_ts_suspend(struct device *dev)
 	}
 #endif
 
-	disable_irq(data->client->irq);
-
-	/* release all touches */
-	for (i = 0; i < data->pdata->num_max_touches; i++) {
-		input_mt_slot(data->input_dev, i);
-		input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, 0);
-	}
-	input_mt_report_pointer_emulation(data->input_dev, false);
-	input_sync(data->input_dev);
-
-	if (gpio_is_valid(data->pdata->reset_gpio)) {
-		txbuf[0] = FT_REG_PMODE;
-		txbuf[1] = FT_PMODE_HIBERNATE;
-		ft5x06_i2c_write(data->client, txbuf, sizeof(txbuf));
-	}
-
-	if (data->pdata->power_on) {
-		err = data->pdata->power_on(false);
-		if (err) {
-			dev_err(dev, "power off failed");
-			goto pwr_off_fail;
-		}
-	} else {
-		err = ft5x06_power_on(data, false);
-		if (err) {
-			dev_err(dev, "power off failed");
-			goto pwr_off_fail;
-		}
-	}
-
-	data->suspended = true;
-
-	return 0;
-
-pwr_off_fail:
-	if (gpio_is_valid(data->pdata->reset_gpio)) {
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-		msleep(data->pdata->hard_rst_dly);
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
-	}
-	enable_irq(data->client->irq);
-	return err;
+	return ft5x06_ts_stop(dev);
 }
 
 static int ft5x06_ts_resume(struct device *dev)
@@ -1026,35 +1203,9 @@ static int ft5x06_ts_resume(struct device *dev)
 	}
 #endif
 
-	if (gpio_is_valid(data->pdata->reset_gpio)) {
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-
-
-	udelay(100);
-	if (data->pdata->power_on) {
-		err = data->pdata->power_on(true);
-		if (err) {
-			dev_err(dev, "power on failed");
-			return err;
-		}
-	} else {
-		err = ft5x06_power_on(data, true);
-		if (err) {
-			dev_err(dev, "power on failed");
-			return err;
-		}
-	}
-		 udelay(500);
-		 udelay(500);
-		  udelay(500);
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
-	}
-
-	msleep(data->pdata->soft_rst_dly);
-
-	enable_irq(data->client->irq);
-	data->suspended = false;
-
+	err = ft5x06_ts_start(dev);
+	if (err < 0)
+		return err;
 
 /* release all touches */
 	for (i = 0; i < data->pdata->num_max_touches; i++) {
@@ -2946,48 +3097,15 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 		if (err < 0) {
 			dev_err(&client->dev,
 				"failed to select pin to active state");
-			goto pinctrl_deinit;
-		}
-	} else {
-		goto pwr_off;
-
-	}
-
-
-
-
-	if (gpio_is_valid(pdata->irq_gpio)) {
-		err = gpio_request(pdata->irq_gpio, "ft5x06_irq_gpio");
-		if (err) {
-			dev_err(&client->dev, "irq gpio request failed");
-			goto err_gpio_req;
-		}
-		err = gpio_direction_input(pdata->irq_gpio);
-		if (err) {
-			dev_err(&client->dev,
-				"set_direction for irq gpio failed\n");
-			goto free_irq_gpio;
 		}
 	}
 
-	if (gpio_is_valid(pdata->reset_gpio)) {
-		err = gpio_request(pdata->reset_gpio, "ft5x06_reset_gpio");
-		if (err) {
-			dev_err(&client->dev, "reset gpio request failed");
-			goto free_irq_gpio;
-		}
-
-		err = gpio_direction_output(pdata->reset_gpio, 0);
-		if (err) {
-			dev_err(&client->dev,
-				"set_direction for reset gpio failed\n");
-			goto free_reset_gpio;
-		}
-		msleep(data->pdata->hard_rst_dly);
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+	err = ft5x06_gpio_configure(data, true);
+	if (err < 0) {
+		dev_err(&client->dev,
+			"Failed to configure the gpios\n");
+		goto err_gpio_req;
 	}
-
-
 
 	/* make sure CTP already finish startup process */
 	msleep(data->pdata->soft_rst_dly);
@@ -2997,14 +3115,14 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	err = ft5x06_i2c_read(client, &reg_addr, 1, &reg_value, 1);
 	if (err < 0) {
 		dev_err(&client->dev, "version read failed");
-		goto free_reset_gpio;
+		goto free_gpio;
 	}
 
 	dev_info(&client->dev, "Device ID = 0x%x\n", reg_value);
 
 	if ((pdata->family_id != reg_value) && (!pdata->ignore_id_check)) {
 		dev_err(&client->dev, "%s:Unsupported controller\n", __func__);
-		goto free_reset_gpio;
+		goto free_gpio;
 	}
 
 	data->family_id = pdata->family_id;
@@ -3015,7 +3133,7 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 				client->dev.driver->name, data);
 	if (err) {
 		dev_err(&client->dev, "request irq failed\n");
-		goto free_reset_gpio;
+		goto free_gpio;
 	}
 
 #ifdef CONFIG_WAKE_GESTURES
@@ -3049,7 +3167,7 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	 err = sysfs_create_group(&client->dev.kobj, &ft5x06_ts_attr_group);
 	 if (err) {
 		dev_err(&client->dev, "Failure %d creating sysfs group\n",err);
-		goto free_reset_gpio;
+		goto free_gpio;
     }
 
 	data->dir = debugfs_create_dir(FT_DEBUG_DIR_NAME, NULL);
@@ -3212,14 +3330,12 @@ free_fw_name_sys:
 	device_remove_file(&client->dev, &dev_attr_fw_name);
 irq_free:
 	free_irq(client->irq, data);
-free_reset_gpio:
+free_gpio:
 	if (gpio_is_valid(pdata->reset_gpio))
 		gpio_free(pdata->reset_gpio);
-free_irq_gpio:
 	if (gpio_is_valid(pdata->irq_gpio))
 		gpio_free(pdata->irq_gpio);
 err_gpio_req:
-pinctrl_deinit:
 	if (data->ts_pinctrl) {
 		if (IS_ERR_OR_NULL(data->pinctrl_state_release)) {
 			devm_pinctrl_put(data->ts_pinctrl);
@@ -3231,7 +3347,6 @@ pinctrl_deinit:
 				pr_err("failed to select relase pinctrl state\n");
 		}
 	}
-pwr_off:
 	if (pdata->power_on)
 		pdata->power_on(false);
 	else
