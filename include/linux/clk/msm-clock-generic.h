@@ -296,6 +296,8 @@ struct mux_div_clk {
 	u32				safe_div;
 	struct clk			*safe_parent;
 	unsigned long			safe_freq;
+	unsigned long                   *safe_freqs;
+	int                             safe_num;
 	bool				try_get_rate;
 	bool				force_enable_md;
 };
