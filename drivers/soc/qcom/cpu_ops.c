@@ -212,6 +212,31 @@ static int msm_cpu_boot(unsigned int cpu)
 	return secondary_pen_release(cpu);
 }
 
+static int msm8976_cpu_boot(unsigned int cpu)
+{
+	int ret = 0;
+	u32 mpidr = cpu_logical_map(cpu);
+
+	if (per_cpu(cold_boot_done, cpu) == false) {
+		if (of_board_is_sim()) {
+			ret = msm_unclamp_secondary_arm_cpu_sim(cpu);
+			if (ret)
+				return ret;
+		} else {
+			ret = msm8976_unclamp_secondary_arm_cpu(cpu);
+			if (ret)
+				return ret;
+		}
+		if (MPIDR_AFFINITY_LEVEL(mpidr, 1)) {
+			ret = msm8976_cpu_ldo_config(cpu);
+			if (ret)
+				return ret;
+		}
+		per_cpu(cold_boot_done, cpu) = true;
+	}
+	return secondary_pen_release(cpu);
+}
+
 void msm_cpu_postboot(void)
 {
 	msm_jtag_restore_state();
@@ -294,3 +319,19 @@ static struct cpu_operations msm8937_cortex_a_ops = {
 };
 CPU_METHOD_OF_DECLARE(msm8937_cortex_a_ops,
 	"qcom,8937-arm-cortex-acc", &msm8937_cortex_a_ops);
+
+static struct cpu_operations msm8976_cortex_a_ops = {
+	.name		= "qcom,8976-arm-cortex-acc",
+	.cpu_init	= msm_cpu_init,
+	.cpu_prepare	= msm_cpu_prepare,
+	.cpu_boot	= msm8976_cpu_boot,
+	.cpu_postboot	= msm_cpu_postboot,
+#ifdef CONFIG_HOTPLUG_CPU
+	.cpu_die        = msm_wfi_cpu_die,
+#endif
+#ifdef CONFIG_ARM64_CPU_SUSPEND
+	.cpu_suspend       = msm_pm_collapse,
+#endif
+};
+CPU_METHOD_OF_DECLARE(msm8976_cortex_a_ops,
+	"qcom,8976-arm-cortex-acc", &msm8976_cortex_a_ops);
