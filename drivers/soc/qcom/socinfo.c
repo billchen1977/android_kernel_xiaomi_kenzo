@@ -541,7 +541,11 @@ static struct msm_soc_info cpu_of_id[] = {
 	[316] = {MSM_CPU_8996, "APQ8096pro"},
 
 	/* 8976 ID */
-	[266] = {MSM_CPU_8976, "MSM8976"},
+	[278] = {MSM_CPU_8976, "MSM8976", "SG"},
+	[277] = {MSM_CPU_8976, "APQ8076", "SG"},
+	/* 8956 ID */
+	[266] = {MSM_CPU_8956, "MSM8956", "SG"},
+	[274] = {MSM_CPU_8956, "APQ8056", "SG"},
 
 	/* 8929 IDs */
 	[268] = {MSM_CPU_8929, "MSM8929"},
@@ -639,6 +643,13 @@ static char *msm_read_hardware_id(void)
 	if (ret > sizeof(msm_soc_str))
 		goto err_path;
 
+	/* Add suffix if need to be */
+	if ((socinfo->v0_2.raw_version == 2) && strlen(cpu_of_id[socinfo->v0_1.id].suffix)) {
+		ret = strlcat(msm_soc_str, cpu_of_id[socinfo->v0_1.id].suffix,
+			sizeof(msm_soc_str));
+		if (ret > sizeof(msm_soc_str))
+			goto err_path;
+	}
 	string_generated = true;
 	return msm_soc_str;
 err_path:
@@ -1236,8 +1247,12 @@ static void * __init setup_dummy_socinfo(void)
 		strlcpy(dummy_socinfo.build_id, "msm8992 - ",
 			sizeof(dummy_socinfo.build_id));
 	} else if (early_machine_is_msm8976()) {
-		dummy_socinfo.id = 266;
+		dummy_socinfo.id = 278;
 		strlcpy(dummy_socinfo.build_id, "msm8976 - ",
+			sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_msm8956()) {
+		dummy_socinfo.id = 266;
+		strlcpy(dummy_socinfo.build_id, "msm8956 - ",
 			sizeof(dummy_socinfo.build_id));
 	} else if (early_machine_is_msm8952()) {
 		dummy_socinfo.id = 264;
