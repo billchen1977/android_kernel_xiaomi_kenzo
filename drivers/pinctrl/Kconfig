@@ -203,6 +203,12 @@ config PINCTRL_PALMAS
 	  open drain configuration for the Palmas series devices like
 	  TPS65913, TPS80036 etc.
 
+config PINCTRL_MSM_TLMM
+	bool "MSM TLMM pinctrl driver"
+	depends on OF && ARCH_MSM
+	select PINMUX
+	select GENERIC_PINCONF
+
 source "drivers/pinctrl/berlin/Kconfig"
 source "drivers/pinctrl/freescale/Kconfig"
 source "drivers/pinctrl/mvebu/Kconfig"
