@@ -97,6 +97,7 @@ static int __iface_cmdq_write(struct venus_hfi_device *device,
 static int __load_fw(struct venus_hfi_device *device);
 static void __unload_fw(struct venus_hfi_device *device);
 static int __tzbsp_set_video_state(enum tzbsp_video_state state);
+static void __clock_adjust(struct venus_hfi_device *device);
 
 
 /**
@@ -3345,6 +3346,7 @@ static void __process_sys_error(struct venus_hfi_device *device)
 
 static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 {
+	struct hfi_msg_sys_coverage_packet *pkt = NULL;
 	bool local_packet = false;
 
 	if (!device) {
@@ -3364,8 +3366,8 @@ static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 	}
 
 	while (!__iface_dbgq_read(device, packet)) {
-		struct hfi_msg_sys_coverage_packet *pkt =
-			(struct hfi_msg_sys_coverage_packet *) packet;
+		__clock_adjust(device);
+		pkt = (struct hfi_msg_sys_coverage_packet *) packet;
 		if (pkt->packet_type == HFI_MSG_SYS_COV) {
 			int stm_size = 0;
 			stm_size = stm_log_inv_ts(0, 0,
@@ -3383,6 +3385,95 @@ static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 
 	if (local_packet)
 		kfree(packet);
+}
+
+static int __set_clock(struct venus_hfi_device *device,
+		unsigned long rate)
+{
+	struct clock_info *cl;
+	int rc = 0;
+
+	venus_hfi_for_each_clock(device, cl) {
+		if (cl->has_scaling) {
+			rc = clk_set_rate(cl->clk, rate);
+			if (rc) {
+				dprintk(VIDC_ERR,
+					"Failed to set clock rate %lu %s: %d\n",
+					rate, cl->name, rc);
+				break;
+			}
+			dprintk(VIDC_DBG, "set clock rate %lu %s\n",
+				rate, cl->name);
+		}
+	}
+	return rc;
+}
+
+#define HFI_CTRL_STATUS_CLK_DOWN        0x200
+#define HFI_CTRL_INIT_CLK_DOWN          0x2
+#define POLL_TRIALS                     100
+
+static void __clock_adjust(struct venus_hfi_device *device)
+{
+	int rc = 0, i = 0;
+	u32 ctrl_status = 0, ctrl_init = 0;
+	unsigned long rate = 0;
+
+	if (!device) {
+		dprintk(VIDC_ERR, "%s: invalid argsn\n", __func__);
+		return;
+	}
+
+	if (!device->power_enabled)
+		return;
+
+	/* check if venus firmware requested to reduce clock rate */
+	ctrl_status = __read_register(device,
+					VIDC_CPU_CS_SCIACMDARG0);
+	if (!(ctrl_status & HFI_CTRL_STATUS_CLK_DOWN))
+		return;
+
+	/* firmware requested to reduce clock rate */
+	rate = __get_clock_rate(device, 0, NULL);
+	rc = __set_clock(device, rate);
+	if (rc) {
+		dprintk(VIDC_ERR, "%s: Clocks reduce failed\n", __func__);
+		return;
+	}
+
+	/* update firmware that driver reduced clock rate */
+	ctrl_init = __read_register(device, VIDC_CTRL_INIT);
+	ctrl_init |= HFI_CTRL_INIT_CLK_DOWN;
+	__write_register(device, VIDC_CTRL_INIT, ctrl_init);
+
+	/* check if firmware asking to increase clock rate back to normal */
+	while (i < POLL_TRIALS) {
+		ctrl_status = __read_register(device,
+						VIDC_CPU_CS_SCIACMDARG0);
+		if (!(ctrl_status & HFI_CTRL_STATUS_CLK_DOWN)) {
+			dprintk(VIDC_DBG,
+				"%s: increase clock rate to normal\n",
+				__func__);
+			break;
+		}
+		i++;
+		usleep_range(i, i);
+	}
+	if (i == POLL_TRIALS) {
+		dprintk(VIDC_WARN,
+			"%s: firmware not requesting to increase clock rate back to normal\n",
+			__func__);
+	}
+
+	/* update firmware that increasing clock rate back to normal */
+	ctrl_init &= ~HFI_CTRL_INIT_CLK_DOWN;
+	__write_register(device, VIDC_CTRL_INIT, ctrl_init);
+
+	/* increase clock rate back to normal */
+	rc = __set_clock(device, device->clk_freq);
+	if (rc) {
+		dprintk(VIDC_ERR, "%s: Clocks increase failed\n", __func__);
+	}
 }
 
 static struct hal_session *__get_session(struct venus_hfi_device *device,
@@ -3407,6 +3498,12 @@ static int __response_handler(struct venus_hfi_device *device)
 
 	if (!device || device->state != VENUS_STATE_INIT)
 		return 0;
+
+	/*
+	 * check for clock adjust request from firmware
+	 * for every interrupt
+	 */
+	__clock_adjust(device);
 
 	packets = device->response_pkt;
 
@@ -3443,6 +3540,12 @@ static int __response_handler(struct venus_hfi_device *device)
 		struct msm_vidc_cb_info *info = &packets[packet_count++];
 		struct vidc_hal_sys_init_done sys_init_done = {0};
 		int rc = 0;
+
+		/*
+		 * check for clock adjust request from firmware
+		 * as often as possible
+		 */
+		__clock_adjust(device);
 
 		rc = hfi_process_msg_packet(device->device_id,
 			(struct vidc_hal_msg_pkt_hdr *)raw_packet, info);
