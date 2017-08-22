@@ -124,6 +124,17 @@
 			reg = <0 0x8DD00000 0 0x1900000>;
 			label = "tzapp_mem";
 		};
+
+		ramoops_mem: ramoops_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			/* Hardboot: reserve 1MB of space
+			 * before ramoops address of 0x1fe00000
+			 */ 
+			reg = <0 0x1fd00000 0 0x00300000>;
+			linux,remove-completely;
+			label = "ramoops_mem";
+		};
 	};
 };
 
@@ -146,6 +157,26 @@
 	#size-cells = <1>;
 	ranges = <0 0 0 0xffffffff>;
 	compatible = "simple-bus";
+
+
+	ramoops {
+		compatible = "ramoops";
+		status = "ok";
+
+		android,ramoops-buffer-start = <0x1fe00000>;
+		android,ramoops-buffer-size = <0x200000>;
+		android,ramoops-console-size = <0x100000>;
+		android,ramoops-record-size = <0x10000>;
+		android,ramoops-ftrace-size = <0x10000>;
+		android,ramoops-pmsg-size = <0x80000>;
+		android,ramoops-dump-oops = <0x1>;
+		linux,contiguous-region = <&ramoops_mem>;
+		android,ramoops-hole {
+			compatible = "qcom,msm-contig-mem";
+			/* Hardboot: reserve 1MB */
+			qcom,memblock-reserve = <0x1fd00000 0x00300000>;
+		};
+	};
 
 	arm64-cpu-erp {
 		compatible = "arm,arm64-cpu-erp";
